@@ -27,6 +27,7 @@ steamAppUrl = 'http://api.steampowered.com/ISteamApps/GetAppList/v0002/?format=j
 response = requests.get(steamAppUrl)
 AppList = response.json()['applist']['apps']
 
+#Get info for specific app from Steam
 def getAppInfo(appId):
     
     #Access game's webpage
@@ -37,28 +38,36 @@ def getAppInfo(appId):
     #Get app name
     try:
         name = bs.find('div', id='appHubAppName').get_text()
-        print(name)
-    except AttributeError:
+        # print(name)
+    except:
         name = np.nan
-        print('No name/failed to load page.')
+        # print('No name/failed to load page.')
+        
+    #Get app developer name
+    try:
+        developerName = bs.find('div', {'class' : 'summary column', 'id' : 'developers_list'}).get_text(strip=True)
+        # print(developerName)
+    except:
+        developerName = np.nan
+        # print("Couldn't find developer name.")
     
     #Get app release date
     try:
         releaseDate = bs.find('div', class_='grid_content grid_date').get_text(strip=True)
-        print('Release Date:', releaseDate)
+        # print('Release Date:', releaseDate)
         
-    except (AttributeError, ValueError, TypeError):
+    except:
         releaseDate = np.nan
-        print('No release date.')
+        # print('No release date.')
     
     #Get app price
     try:
         price = bs.find('meta', itemprop='price')['content']
-        print('Price: ${}'.format(price))
+        # print('Price: ${}'.format(price))
         
-    except TypeError:
+    except:
         price = np.nan
-        print('No price to report.')
+        # print('No price to report.')
     
     
     #Get total number of reviews
@@ -78,11 +87,11 @@ def getAppInfo(appId):
         #Get total number of reviews
         numReviews = max(reviewNumbers)
         
-        print('Number of reviews:', numReviews)
+        # print('Number of reviews:', numReviews)
         
-    except (AttributeError, ValueError, TypeError):
+    except:
         numReviews = np.nan
-        print('No reviews.')
+        # print('No reviews.')
     
     try:
         #Get string talking about the fraction of positive reviews
@@ -93,21 +102,30 @@ def getAppInfo(appId):
         #Clean string; get the percent of positive reviews
         positiveReviewPercentage = positiveReviewPercentageString[
             :positiveReviewPercentageString.index('%')+1]
-        print('{} of reviews are positive.'.format(positiveReviewPercentage))
+        # print('{} of reviews are positive.'.format(positiveReviewPercentage))
         
-    except (ValueError, TypeError):
+    except:
         positiveReviewPercentage = np.nan
-        print('No review percentage to report.')
+        # print('No review percentage to report.')
+    
+    #Get app genre
+    try:
+        appGenre = bs.find_all('span', {'data-panel' : True})[0].get_text(strip=True).split(",")
+        # print('App genre(s): {}'.format(appGenre))
+        
+    except:
+        appGenre = np.nan
+        # print('Could not get app genre(s).')
     
     #Get list game-tag strings
     try:
         tagsList = [bs.find_all('a', class_='app_tag')[i].get_text(strip=True)
                 for i in range(len(bs.find_all('a', class_='app_tag')))]
-        print(tagsList)
+        # print(tagsList)
         
     except:
         tagsList = []
-        print('Could not obtain tags list.')
+        # print('Could not obtain tags list.')
             
     
     # #Get other app info from SteamDB
@@ -128,30 +146,30 @@ def getAppInfo(appId):
     #Get app type header
     try:
         appType = bs.find('div', class_='blockbg').a.get_text()
-        print('App type: {}'.format(appType))
+        # print('App type: {}'.format(appType))
         
-    except (AttributeError, ValueError, TypeError):
+    except:
         appType = np.nan
-        print('No app type found.')
+        # print('No app type found.')
     
     #Is it DLC?
     try:
         dlcString = bs.find('div',text='Downloadable Content').get_text()
         dlcBool = (type(dlcString) != '')
-        print('Is this DLC?',dlcBool)
+        # print('Is this DLC?',dlcBool)
         
-    except (AttributeError, ValueError, TypeError):
+    except:
         dlcBool = False
-        print('Not DLC.')
+        # print('Not DLC.')
         
     #Get game description
     try:
         appDesc = bs.find('meta', {'name' : 'Description'})['content']
-        print(appDesc)
+        # print(appDesc)
         
-    except (AttributeError, ValueError, TypeError):
+    except:
         appDesc = np.nan
-        print('No game description found.')
+        # print('No game description found.')
         
     # #Is it a downloadable soundtrack?
     # try:
@@ -173,51 +191,69 @@ def getAppInfo(appId):
     #     videoBool = False
     #     print('Not a video.')
  
-    print('--------------------------------------------------------------------')
+    return [appId, name, developerName, releaseDate, price, numReviews, positiveReviewPercentage,
+            appGenre, tagsList, appType, dlcBool, appDesc]
     
-    return [appId, name, releaseDate, price, numReviews, positiveReviewPercentage,
-            tagsList, appType, dlcBool, appDesc]
-    
+#Get info for a random app on Steam
 def getRandomAppInfo():
     random.seed(datetime.datetime.now())
     
     randomAppId = random.choice(AppList)['appid']
-    print(randomAppId)
     
     return getAppInfo(randomAppId)
 
+#Remove unencodable characters from strings
 def removeUnencodableCharacters(string):
-    
-    #Remove unencodable characters from strings
     output = ''
     
     for character in string:
         
         #Check if character is a normal keyboard character
-        #(like note a weird parenthesis or kanji)
+        #(i.e., check that it is not a weird parenthesis or kanji or something)
         if ord(character) < 128:
             output += character
     
     return output
 
-#Scrapes all apps from Steam
-def getSomeRandomAppsInfo():
+#Scrapes all apps from Steam; stores data in csv file
+#
+#Logs scraping in txt file
+def getAllAppsInfo():
     startTime = time.time()
         
     numLoops = 0
     
     csvFile = open('SteamAppsInfo.csv', 'w+')
+    scrapingLogsTxt = open('SteamScrapingLogs.txt', 'w')
     
     writer = csv.writer(csvFile)
-    writer.writerow(('appId','name','releaseDate','price','numReviews',
-                     'positiveReviewPercentage','tagsList','appType','dlcBool',
-                     'appDesc','alteredNameOrDescBool'))
-    while numLoops < 100:
+    writer.writerow(('appId','name', 'developerName', 'releaseDate','price',
+                     'numReviews', 'positiveReviewPercentage', 'appGenre','tagsList','appType','dlcBool',
+                     'appDesc','alteredTextBool'))
+    
+    failureCount = 0
+    
+    for app in AppList:
         
         try:
-            appInfo = getRandomAppInfo()
+            appInfo = getAppInfo(app['appid'])
             
-            appType = appInfo[7];
+            appType = appInfo[9];
+            
+            print('Trying to get info from {} (App ID: {})...'.format(appInfo[1],appInfo[0]))
+            try:
+                scrapingLogsTxt.write('Trying to get info from {} (App ID: {})...\n'.format(appInfo[1],appInfo[0]))
+                
+            except UnicodeError:
+                try:
+                    appInfo[1] = removeUnencodableCharacters(appInfo[1])
+                    
+                    scrapingLogsTxt.write('Trying to get info from {} (App ID: {})...\n'.format(appInfo[1],appInfo[0]))
+                except:
+                    print('Failed to write name of App {} into data logs.'.format(appInfo[0]))
+                    scrapingLogsTxt.write('Failed to write name of App {} into data logs.\n')
+            
+                
             
             #Check there is an app type, i.e., that appType =/= np.nan
             if appType != np.nan:
@@ -231,26 +267,46 @@ def getSomeRandomAppsInfo():
                     try:
                         writer = csv.writer(csvFile)
                         writer.writerow(tuple(appInfo + [False]))
+                        print('Wrote data to CSV successfully!')
+                        scrapingLogsTxt.write('Wrote data to CSV successfully!\n')
                     
                     except UnicodeEncodeError:
                         #Rewrite unencodable game name and/or description
                         try:
                             appInfo[1] = removeUnencodableCharacters(appInfo[1])
-                            appInfo[9] = removeUnencodableCharacters(appInfo[9])
+                            appInfo[2] = removeUnencodableCharacters(appInfo[2])
+                            appInfo[11] = removeUnencodableCharacters(appInfo[11])
                             
                             writer = csv.writer(csvFile)
                             writer.writerow(tuple(appInfo + [True]))
+                            
+                            print('Wrote data to CSV successfully!')
+                            scrapingLogsTxt.write('Wrote data to CSV successfully!\n')
                         except:
                             print('Failed to rewrite unencodable game description.')
+                            scrapingLogsTxt.write('Failed to rewrite unencodable game description.\n')
                     
                     except:
                         print('Failed to write to CSV.')
-                        return
+                        scrapingLogsTxt.write('Failed to write to CSV.\n')
+                
+                else:
+                    print('Not a game. No data saved.')
+                    scrapingLogsTxt.write('Not a game. No data saved.\n')
                 
         except HTTPError:
             print('HTTP Error!')
+            scrapingLogsTxt.write('HTTP Error!\n')
             pass
-            
+        
+        except:
+            print('Failed to get app info!')
+            scrapingLogsTxt.write('Failed to get app info!\n')
+            failureCount += 1
+        
+        print('--------------------------------------------------------------------')
+        scrapingLogsTxt.write('--------------------------------------------------------------------\n')
+        
         time.sleep(0.6) #Delay scraping a little bit to be nice
             
         numLoops += 1
@@ -258,9 +314,13 @@ def getSomeRandomAppsInfo():
         
         
         print("{} seconds elapsed.".format(time.time() - startTime))
+        scrapingLogsTxt.write("{} seconds elapsed.\n".format(time.time() - startTime))
         
         
+    print('Failed to get info on {} out of {} apps.'.format(failureCount,len(AppList)))
+    scrapingLogsTxt.write('Failed to get info on {} out of {} apps.\n'.format(failureCount,len(AppList)))
     csvFile.close()
+    scrapingLogsTxt.close()
     
 
     
