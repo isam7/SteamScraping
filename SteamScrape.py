@@ -210,8 +210,13 @@ def removeUnencodableCharacters(string):
         
         #Check if character is a normal keyboard character
         #(i.e., check that it is not a weird parenthesis or kanji or something)
-        if ord(character) < 128:
-            output += character
+        
+        try:
+            if ord(character) < 128:
+                output += character
+                
+        except TypeError:
+            pass
     
     return output
 
@@ -321,7 +326,4 @@ def getAllAppsInfo():
     scrapingLogsTxt.write('Failed to get info on {} out of {} apps.\n'.format(failureCount,len(AppList)))
     csvFile.close()
     scrapingLogsTxt.close()
-    
-
-    
     
