@@ -327,3 +327,61 @@ def getAllAppsInfo():
     csvFile.close()
     scrapingLogsTxt.close()
     
+#Get Steam reviews data
+def getSteamReviewData(appId):
+    
+    #Access game's webpage
+    appUrl = 'https://store.steampowered.com/appreviews/{}?json=1'.format(appId)
+    response = requests.get(appUrl)
+    
+    return response
+
+def getAllSteamReviews():
+    startTime = time.time()
+    
+    numLoops = 1
+    
+    rawGames = pd.read_csv('SteamAppsInfo.csv', encoding = "ISO-8859-1")
+    
+    reviewJson = list()
+    
+    reviewScrapingLogsTxt = open('SteamScrapingLogs.txt', 'w')
+    
+    for appId in rawGames['appId'].to_list():
+        
+        try:
+            reviewData = getSteamReviewData(appId).json()
+            
+            print('Scraping App #{}, iteration {}...'.format(appId,numLoops))
+            reviewScrapingLogsTxt.write('Scraping App #{}, iteration {}...\n'.format(appId,numLoops))
+            if reviewData['success'] == 1:
+                print('Success!!')
+                reviewScrapingLogsTxt.write('Success!!\n')
+                
+            else:
+                print('Failure...')
+                reviewScrapingLogsTxt.write('Failure...\n')
+                
+            print('Summary of App #{} reviews:'.format(appId))
+            print(reviewData['query_summary'],'\n')
+            print("{} seconds elapsed.".format(time.time() - startTime))
+            reviewScrapingLogsTxt.write("{} seconds elapsed.\n".format(time.time() - startTime))
+            print('--------------------------------------------------------------------')
+            reviewScrapingLogsTxt.write('--------------------------------------------------------------------\n')
+            
+            reviewData['appId'] = appId
+            
+            reviewJson.append(reviewData)
+        
+        except:
+            print('Failed to get data!')
+            reviewScrapingLogsTxt.write('Failed to get data!')
+        
+        numLoops += 1
+        
+        time.sleep(0.3) #Delay scraping a little bit to be nice
+        
+    with open('SteamReviewsData2.json', 'w') as f:
+        json.dump(reviewJson, f, indent=2)
+    
+    return
