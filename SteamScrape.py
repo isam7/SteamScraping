@@ -8,6 +8,8 @@ Created on Sun May  8 21:30:27 2022
 from urllib.request import Request, urlopen
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
+from proxybroker import Broker
+import asyncio
 import datetime
 import random
 import re
@@ -385,3 +387,216 @@ def getAllSteamReviews():
         json.dump(reviewJson, f, indent=2)
     
     return
+
+def getAllUsersInfo():
+    #Get games owned by Steam user with a certain ID
+    from requests.exceptions import HTTPError
+    startTime = time.time()
+        
+    successCount = 0
+    interactionsCount = 0
+    
+    csvFile = open('SteamUsersInfo.csv', 'w+')
+    scrapingLogsTxt = open('SteamUserScrapingLogs.txt', 'w')
+    
+    writer = csv.writer(csvFile)
+    writer.writerow(('userID','ownedAppIDs','userCountry','userState'))
+    
+    userIDs = pd.read_csv('SteamUsersIDs.csv', encoding = "ISO-8859-1")['userID'].values
+    
+    for chunk in range(0,len(userIDs),100):
+    
+        userList = userIDs[chunk:chunk + 100]
+        
+        #Create empty string to fill with comma-delimited list of user IDs (in bins of 100) to pass to Steam API in URL
+        userListString = ''
+        
+        #Add users from current userList to string of users
+        for user in userList:
+            userListString += str(user) + ','
+            
+        #Remove last character from list, since it is an unecessary comma
+        userListString = userListString[:-1]
+        try:
+            steamUserAPIUrl = 'https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=DB6B9F4DA3B3C4BD75840820BBFE4EB9&steamids={}&format=json'.format(userListString)
+            userResponse = requests.get(steamUserAPIUrl)
+            userResponseList = userResponse.json()['response']['players']
+            
+        except AttributeError as e:
+            print('Attribute Error!')
+        
+        for user in userResponseList:
+            
+            print(user['steamid'])
+            #Country and state of user, if known
+            try:
+                userCountry = user['loccountrycode']
+            except:
+                userCountry = np.nan
+                print('Failed to get user country.')
+            
+            try:
+                userState = user['locstatecode']
+            except:
+                userState = np.nan
+                print('Failed to get user state.')
+            
+            
+            try:
+                steamUserUrl = 'https://steamcommunity.com/profiles/{}/games/?tab=all'.format(user['steamid'])
+                html = urlopen(steamUserUrl)
+                bs = BeautifulSoup(html, 'html.parser')
+            except HTTPError as e:
+                print(e.response.text)
+            
+            #BeautifulSoup finds the (hideous) javascript variable containing all the games owned by user
+            appIds = bs.find('script', language='javascript').string
+            
+            #Regular expression makes the soup beautiful (finds all app IDs in the list)
+            appIdsClean = re.findall('"appid":(.*?),"',appIds)
+            
+            if appIdsClean == []:
+                print('No games publicly shown for this user.')
+            else:
+                print('Successfully collected app list for user {}!'.format(user['steamid']))
+                interactionsCount += len(appIdsClean)
+                successCount += 1
+            appIdsClean = []
+            print('Failed to get owned apps!')
+            
+            # print(userCountry)
+            # print(userState)
+            # print(appIdsClean)
+            
+            writer.writerow((user['steamid'],appIdsClean,userCountry,userState))
+            print(user['steamid'],userCountry,userState)
+            
+            
+            time.sleep(1)
+       
+        print('Success count:', successCount)
+        print('Total user-item interactions:', interactionsCount)
+        break
+    csvFile.close()
+    scrapingLogsTxt.close()
+    
+    return
+
+# get n proxies from proxybroker
+def getProxies(n):
+    async def show(proxies):
+        p = []
+        while True:
+                proxy = await proxies.get()
+                if proxy is None: break
+                p.append("{}://{}:{}".format(proxy.schemes[0].lower(), proxy.host, proxy.port))
+        return p
+    
+    proxies = asyncio.Queue()
+    broker = Broker(proxies)
+    tasks = asyncio.gather(broker.find(types=['HTTP', 'HTTPS'], limit=n), show(proxies))
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(tasks)[1]
+
+def getAllUsersInfoNoAPI():
+    #Get games owned by Steam user with a certain ID
+    from fake_useragent import UserAgent
+    
+    startTime = time.time()
+    
+    ua = UserAgent()
+    
+    successCount = 0
+    interactionsCount = 0
+    userCount = 1
+    
+    csvFile = open('SteamUsersInfoLongDelay.csv', 'w+')
+    scrapingLogsTxt = open('SteamUserScrapingLogs.txt', 'w')
+    
+    writer = csv.writer(csvFile, lineterminator = '\n')
+    writer.writerow(('userID','ownedAppIDs'))
+    
+    userIDs = pd.read_csv('SteamUsersIDs.csv', encoding = "ISO-8859-1")['userID'].values
+    
+    #Create proxy list
+    # proxyTxt = open("proxies.txt", "r")
+
+    # proxyIPs = []
+    # for line in proxyTxt:
+    #   rawProxies = line.strip()
+    #   proxyIPs.append(rawProxies)
+    
+    # proxyTxt.close()
+    
+    for user in userIDs:
+            
+        print('Trying to get info from user #{} (User ID: {})...'.format(userCount,user))
+        scrapingLogsTxt.write('Trying to get info from user {} (User ID: {})...\n'.format(userCount,user))
+        
+        try:
+            steamUserUrl = 'https://steamcommunity.com/profiles/{}/games/?tab=all'.format(user)
+            
+            #Get random user agent
+            header = {'User-Agent':str(ua.random)}
+            # print(header)
+            
+            html = requests.get(steamUserUrl, headers=header).text
+            bs = BeautifulSoup(html, 'html.parser')
+            if bs.find('div', class_='profile_fatalerror') is not None:
+                print('HTTPError: Too many requests!')
+            
+            try:
+                #BeautifulSoup finds the (hideous) javascript variable containing all the games owned by user
+                appIds = bs.find('script', language='javascript').string
+                
+                #Regular expression makes the soup beautiful (finds all app IDs in the list)
+                appIdsClean = re.findall('"appid":(.*?),"',appIds)
+                    
+                if appIdsClean == []:
+                    print('No games publicly shown for user ID {}.'.format(user))
+                    scrapingLogsTxt.write('No games publicly shown for user ID {}.\n'.format(user))
+                else:
+                    print('Successfully collected app list for user ID {}!'.format(user))
+                    scrapingLogsTxt.write('Successfully collected app list for user ID {}!\n'.format(user))
+                    interactionsCount += len(appIdsClean)
+                    successCount += 1
+                
+            except AttributeError:
+                appIdsClean = []
+                print('Failed to get owned apps for user ID {}!'.format(user))
+                scrapingLogsTxt.write('Failed to get owned apps for user ID {}!\n'.format(user))
+            
+        except requests.exceptions.RequestException as e:
+            appIdsClean = []
+            print(e)
+            print('HTTPError: Failed to connect.')
+            scrapingLogsTxt.write('HTTPError: Failed to connect.\n')
+        
+        
+            
+        
+        # print(userCountry)
+        # print(userState)
+        # print(appIdsClean)
+        
+        writer.writerow((user,appIdsClean))
+        print(user)
+        
+        time.sleep(60)
+       
+        print('Time since start: {} min.'.format((time.time() - startTime)/60))
+        print('Success count:', successCount)
+        print('Total user-item interactions:', interactionsCount)
+        print('Total users scraped: {}\n'.format(userCount))
+        
+        scrapingLogsTxt.write('Time since start:  {} min.\n'.format((time.time() - startTime)/60))
+        scrapingLogsTxt.write('Success count: {}\n'.format(successCount))
+        scrapingLogsTxt.write('Total user-item interactions: {}\n'.format(interactionsCount))
+        scrapingLogsTxt.write('Total users scraped: {}\n'.format(userCount))
+        
+        userCount += 1
+        
+    csvFile.close()
+    scrapingLogsTxt.close()
+    
+    return 
