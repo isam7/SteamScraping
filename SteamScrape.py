@@ -600,3 +600,17 @@ def getAllUsersInfoNoAPI():
     scrapingLogsTxt.close()
     
     return 
+
+def getMyGames():
+    
+    myGames = open('myGamesData.txt','w')
+    
+    myGamesList = open('myGames.txt','r').read()
+    
+    myGames.write(str(re.findall('"appid":(.*?),"',myGamesList)))
+    
+    print(str(re.findall('"appid":(.*?),"',myGamesList)))
+    
+    myGames.close()
+    
+    return
